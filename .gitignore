@@ -1,0 +1,16 @@
+# Rust build output
+/target/
+
+# Local measurement output
+/out/
+
+# Editor and OS files
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*~
+
+# Environment files
+.env
+.env.*
