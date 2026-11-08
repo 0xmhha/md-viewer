@@ -1,0 +1,25 @@
+[package]
+name = "mdv"
+version = "0.0.1"
+edition = "2021"
+rust-version = "1.88"
+resolver = "3"
+publish = false
+
+[dependencies]
+comrak = { version = ">=0.40", default-features = false }
+mermaid-rs-renderer = { version = "0.3.1", default-features = false }
+ratex-parser = "0.1.15"
+ratex-layout = "0.1.15"
+ratex-types = "0.1.15"
+ratex-render = { version = "0.1.15", features = ["embed-fonts"] }
+resvg = "0.45"
+viuer = "0.11"
+image = { version = "0.25", default-features = false, features = ["png"] }
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = true
+panic = "abort"
