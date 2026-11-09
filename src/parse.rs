@@ -19,7 +19,9 @@ pub fn options() -> Options<'static> {
     o.extension.autolink = true;
     o.extension.math_dollars = true;
     o.extension.wikilinks_title_after_pipe = true;
-    o.extension.alerts = true;
+    o.extension.ofm_callouts = true;
+    o.extension.ofm_comments = true;
+    o.extension.footnotes = true;
     o.extension.highlight = true;
     o.extension.front_matter_delimiter = Some("---".into());
     o
