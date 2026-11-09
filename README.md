@@ -5,7 +5,7 @@ It renders math, Mermaid diagrams, images and Obsidian syntax without a
 browser, Node.js or network access.
 
 > **Status:** early development. The design is settled; the first version
-> is being implemented. Nothing below is usable yet unless marked as done.
+> is being implemented. Features below are planned unless marked **(done)**.
 
 ## Why
 
@@ -16,18 +16,32 @@ right where you work, including over SSH.
 
 ## Planned features (v1)
 
-- Terminal rendering by default; `--browser` opens a local browser view.
+- Terminal rendering by default **(done: text, lists, tables, code, links)**;
+  `--browser` opens a local browser view.
 - Math (`$...$`, `$$...$$`) rendered as images, with LaTeX source as a
   fallback when the terminal has no graphics support.
 - Mermaid diagrams rendered as images, with Unicode box drawings as a
   fallback.
 - GitHub Flavored Markdown and relative images.
-- Obsidian syntax: wikilinks, embeds, callouts, highlights, front matter.
+- Obsidian syntax: wikilinks, embeds, callouts, highlights, front matter
+  **(done in the terminal; embeds show as placeholders for now)**.
 - Open a note by name inside an Obsidian vault.
 - `mdv check`: report Mermaid syntax errors, math parse errors, broken image
   paths and missing wikilinks as JSON, so scripts and agents can verify
   documents.
 - No network access at run time; all assets are inside the binary.
+
+## Usage
+
+```sh
+mdv note.md                 # render in the terminal
+mdv --width 100 note.md     # wrap at 100 columns instead of the terminal width
+mdv --color never note.md   # plain text; `auto` (default) also honours NO_COLOR
+mdv note.md | less -R       # page long documents
+```
+
+Until image rendering lands, math is shown as LaTeX source and Mermaid
+diagrams as their source code.
 
 ## Building from source
 

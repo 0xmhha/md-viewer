@@ -16,6 +16,8 @@ path = "src/main.rs"
 [dependencies]
 clap = { version = "4", features = ["derive"] }
 comrak = { version = "0.59", default-features = false }
+terminal_size = "0.4"
+unicode-width = "0.2"
 
 [profile.release]
 lto = "thin"
