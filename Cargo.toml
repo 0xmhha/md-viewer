@@ -1,0 +1,24 @@
+[package]
+name = "md-viewer"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+description = "A lightweight, single-binary Markdown viewer for the terminal"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/0xmhha/md-viewer"
+readme = "README.md"
+publish = false
+
+[[bin]]
+name = "mdv"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+comrak = { version = "0.59", default-features = false }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true
+panic = "abort"
