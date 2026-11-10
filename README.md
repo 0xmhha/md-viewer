@@ -19,7 +19,8 @@ right where you work, including over SSH.
 - Terminal rendering by default **(done: text, lists, tables, code, links)**;
   `--browser` opens a local browser view.
 - Math (`$...$`, `$$...$$`) rendered as images, with LaTeX source as a
-  fallback when the terminal has no graphics support.
+  fallback when the terminal has no graphics support **(done in the
+  terminal)**.
 - Mermaid diagrams rendered as images, with Unicode box drawings as a
   fallback.
 - GitHub Flavored Markdown and relative images.
@@ -40,8 +41,22 @@ mdv --color never note.md   # plain text; `auto` (default) also honours NO_COLOR
 mdv note.md | less -R       # page long documents
 ```
 
-Until image rendering lands, math is shown as LaTeX source and Mermaid
-diagrams as their source code.
+Math in the terminal:
+
+- Display math (`$$...$$`) is drawn as an image in the terminal's text color
+  when the terminal supports the kitty graphics protocol (checked with
+  Ghostty). `mdv` asks the terminal once at start-up; this takes a few
+  milliseconds.
+- Inline math (`$...$`) becomes Unicode text such as `x²`, `dₖ` and `√dₖ`, so
+  it flows with the sentence. A formula that cannot be written this way is
+  shown as its LaTeX source.
+- Display math is shown as LaTeX source when output goes to a pipe or a file,
+  with `--color never`, inside tmux or screen, when the terminal does not
+  answer, and when a formula cannot be parsed or does not fit.
+- A terminal that answers the start-up question later than 200 ms (1 s over
+  SSH) gets LaTeX source, and its late answer may show up at the shell prompt.
+
+Until image rendering lands, Mermaid diagrams are shown as their source code.
 
 ## Building from source
 
@@ -75,4 +90,4 @@ conditions.
 
 Third-party components bundled into the binary (such as KaTeX fonts under
 the SIL Open Font License 1.1) keep their own licenses; their notices are
-listed in `THIRD_PARTY_NOTICES.md` once they are added.
+listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

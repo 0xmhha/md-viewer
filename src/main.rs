@@ -4,7 +4,7 @@ use std::process::ExitCode;
 
 use clap::Parser;
 use md_viewer::cli::{Cli, Command, color_enabled, no_color_requested, output_width};
-use md_viewer::term::{RenderOptions, render};
+use md_viewer::term::{RenderOptions, probe, render};
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
@@ -33,13 +33,20 @@ fn view(file: &Path, cli: &Cli) -> ExitCode {
         .then(terminal_size::terminal_size)
         .flatten()
         .map(|(w, _)| usize::from(w.0));
+    let color = color_enabled(
+        cli.color,
+        is_tty,
+        no_color_requested(std::env::var_os("NO_COLOR").as_deref()),
+    );
+    // Images go only to a terminal that is showing colors; a pipe or a
+    // file gets the math source.
+    let has_display_math = markdown.contains("$$");
     let opts = RenderOptions {
         width: output_width(cli.width, terminal),
-        color: color_enabled(
-            cli.color,
-            is_tty,
-            no_color_requested(std::env::var_os("NO_COLOR").as_deref()),
-        ),
+        color,
+        graphics: (is_tty && color && has_display_math)
+            .then(probe::detect)
+            .flatten(),
     };
     let text = render(&markdown, &opts);
     match stdout.lock().write_all(text.as_bytes()) {
