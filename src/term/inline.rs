@@ -4,6 +4,7 @@ use std::collections::HashMap;
 
 use comrak::nodes::{AstNode, NodeValue};
 
+use super::math_text::to_unicode;
 use super::span::{self, Span};
 use super::style::{Color, Style};
 
@@ -22,6 +23,16 @@ pub fn code_style() -> Style {
 
 pub fn math_style() -> Style {
     Style::fg(Color::Magenta)
+}
+
+/// Inline math as Unicode text when it converts, else its source.
+/// Display math keeps its source here; blocks draw it separately.
+fn math_text(literal: &str, display: bool) -> String {
+    let source = literal.trim();
+    if display {
+        return source.to_owned();
+    }
+    to_unicode(source).unwrap_or_else(|| source.to_owned())
 }
 
 fn placeholder_style() -> Style {
@@ -55,7 +66,10 @@ fn walk<'a>(node: &'a AstNode<'a>, style: &Style, ctx: &InlineCtx, out: &mut Vec
         NodeValue::SoftBreak => out.push(Span::new(" ", style.clone())),
         NodeValue::LineBreak => out.push(Span::plain("\n")),
         NodeValue::Code(c) => out.push(Span::new(&c.literal, code_style())),
-        NodeValue::Math(m) => out.push(Span::new(m.literal.trim(), math_style())),
+        NodeValue::Math(m) => out.push(Span::new(
+            math_text(&m.literal, m.display_math),
+            math_style(),
+        )),
         NodeValue::Emph => nested(style.clone().italic(), out),
         NodeValue::Strong => nested(style.clone().bold(), out),
         NodeValue::Strikethrough => nested(style.clone().strike(), out),

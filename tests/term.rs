@@ -12,6 +12,7 @@ fn plain_at(md: &str, width: usize) -> String {
         &RenderOptions {
             width,
             color: false,
+            graphics: None,
         },
     )
 }
@@ -26,6 +27,7 @@ fn colored(md: &str) -> String {
         &RenderOptions {
             width: 80,
             color: true,
+            graphics: None,
         },
     )
 }
@@ -132,11 +134,22 @@ fn block_ids_comments_and_front_matter_are_hidden() {
     assert!(out.contains("visible"));
 }
 
-// Math and Mermaid (shown as source until M2 and M3)
+// Math and Mermaid (Mermaid is shown as source until M3)
 
 #[test]
-fn inline_math_drops_dollars() {
-    assert_eq!(plain("Energy $E=mc^2$.\n").trim_end(), "Energy E=mc^2.");
+fn inline_math_becomes_unicode_text() {
+    assert_eq!(plain("Energy $E=mc^2$.\n").trim_end(), "Energy E=mc².");
+    let out = plain("Scale by $\\frac{1}{\\sqrt{d_k}}$ with $\\alpha \\in \\mathbb{R}$.\n");
+    assert_eq!(out.trim_end(), "Scale by 1/√dₖ with α ∈ ℝ.");
+}
+
+#[test]
+fn inline_math_it_cannot_convert_keeps_its_source() {
+    let md = "Matrix $\\begin{pmatrix} a \\end{pmatrix}$ here.\n";
+    assert_eq!(
+        plain(md).trim_end(),
+        "Matrix \\begin{pmatrix} a \\end{pmatrix} here."
+    );
 }
 
 #[test]
@@ -314,4 +327,112 @@ fn bidi_controls_are_replaced() {
         !out.contains('\u{202e}') && !out.contains('\u{2066}'),
         "{out:?}"
     );
+}
+
+// Display math as images (M2)
+
+use md_viewer::math_image::Rgb;
+use md_viewer::term::probe::Graphics;
+
+const GHOSTTY: Graphics = Graphics {
+    cell_width: 8,
+    cell_height: 21,
+    foreground: Rgb(0xcd, 0xd6, 0xf4),
+    screen_rows: 50,
+};
+
+fn with_graphics(md: &str, graphics: Graphics, width: usize) -> String {
+    render(
+        md,
+        &RenderOptions {
+            width,
+            color: true,
+            graphics: Some(graphics),
+        },
+    )
+}
+
+const KITTY: &str = "\x1b_Ga=T,f=100,t=d,q=2,C=1";
+
+#[test]
+fn display_math_is_drawn_as_an_image_instead_of_source() {
+    let out = with_graphics("Before\n$$\n\\frac{a}{b}\n$$\nafter\n", GHOSTTY, 80);
+    assert!(out.contains(KITTY), "{out:?}");
+    assert!(!out.contains("\\frac"), "{out:?}");
+    assert!(out.contains("Before") && out.contains("after"));
+}
+
+#[test]
+fn image_rows_are_reserved_and_the_cursor_returns_below_them() {
+    let out = with_graphics("$$\n\\sum_{i=1}^{n} \\frac{a_i}{b_i}\n$$\n", GHOSTTY, 80);
+    let up = out
+        .split("\x1b[")
+        .find_map(|s| s.strip_suffix_char_up())
+        .expect("cursor moves up before the image");
+    assert!(out.contains(&format!("\x1b[{up}B")), "{out:?}");
+    let reserved = out.lines().count();
+    assert_eq!(reserved, up + 1, "{out:?}");
+}
+
+#[test]
+fn image_inside_a_quote_keeps_the_bar_on_every_row() {
+    let out = with_graphics("> $$\n> \\int_0^1 \\frac{x}{2}\\,dx\n> $$\n", GHOSTTY, 80);
+    assert!(out.contains(KITTY), "{out:?}");
+    for line in out.lines() {
+        assert!(line.contains('│'), "row without the bar: {line:?}");
+    }
+}
+
+#[test]
+fn math_that_cannot_be_drawn_falls_back_to_source() {
+    let out = with_graphics("$$\n\\frac{a}\n$$\n", GHOSTTY, 80);
+    assert!(!out.contains(KITTY), "{out:?}");
+    assert!(out.contains("\\frac{a}"), "{out:?}");
+}
+
+#[test]
+fn math_taller_than_the_screen_falls_back_to_source() {
+    let tiny_screen = Graphics {
+        screen_rows: 2,
+        ..GHOSTTY
+    };
+    let out = with_graphics(
+        "$$\n\\frac{\\frac{a}{b}}{\\frac{c}{d}}\n$$\n",
+        tiny_screen,
+        80,
+    );
+    assert!(!out.contains(KITTY), "{out:?}");
+}
+
+#[test]
+fn math_too_wide_even_when_shrunk_falls_back_to_source() {
+    let wide = format!("$$\n{}\n$$\n", "a+".repeat(80) + "a");
+    let out = with_graphics(&wide, GHOSTTY, 30);
+    assert!(!out.contains(KITTY), "{out:?}");
+}
+
+#[test]
+fn no_graphics_means_no_image_escapes() {
+    assert!(!colored("$$\nx^2\n$$\n").contains("\x1b_G"));
+}
+
+trait CursorUp {
+    fn strip_suffix_char_up(&self) -> Option<usize>;
+}
+
+impl CursorUp for str {
+    /// `12A...` (the text after `ESC [`) to 12.
+    fn strip_suffix_char_up(&self) -> Option<usize> {
+        let digits: String = self.chars().take_while(char::is_ascii_digit).collect();
+        self[digits.len()..]
+            .starts_with('A')
+            .then(|| digits.parse().ok())
+            .flatten()
+    }
+}
+
+#[test]
+fn empty_display_math_draws_nothing() {
+    let out = with_graphics("a\n\n$$\n$$\n\nb\n", GHOSTTY, 80);
+    assert!(!out.contains(KITTY), "{out:?}");
 }

@@ -5,16 +5,22 @@ use std::collections::HashMap;
 use comrak::nodes::{AstNode, NodeCodeBlock, NodeList, NodeValue};
 
 use super::inline::{self, InlineCtx};
+use super::kitty;
 use super::prefix::Prefix;
+use super::probe::Graphics;
 use super::span::{self, Span, paint_line};
 use super::style::{Color, Style};
 use super::wrap::wrap;
 use super::{RenderOptions, callout, table};
+use crate::math_image::{self, Png};
 
 /// Narrowest text column kept even when prefixes eat the whole width.
 const MIN_TEXT_WIDTH: usize = 10;
 const BULLETS: [&str; 3] = ["•", "◦", "▪"];
 const DISPLAY_MATH_INDENT: &str = "    ";
+/// Smallest scale a too-wide formula is shrunk to before its source is
+/// shown instead.
+const MIN_MATH_SCALE: f32 = 0.6;
 /// Quotes, lists and callouts nested deeper than this print as plain text,
 /// so hostile input cannot exhaust the stack or grow prefixes without bound.
 const MAX_NESTING: usize = 32;
@@ -210,12 +216,64 @@ impl<'c> Writer<'c> {
     }
 
     fn display_math(&mut self, literal: &str, prefix: &mut Prefix) {
+        if let Some(graphics) = self.opts.graphics
+            && !literal.trim().is_empty()
+            && let Some(png) = self.fitted_image(literal, &graphics, prefix)
+        {
+            return self.emit_image(&png, &graphics, prefix);
+        }
         for line in literal.lines().map(str::trim).filter(|l| !l.is_empty()) {
             let body = [
                 Span::plain(DISPLAY_MATH_INDENT),
                 Span::new(line, inline::math_style()),
             ];
             self.emit(prefix, &body);
+        }
+    }
+
+    /// The formula drawn at the terminal's text size, or smaller when that
+    /// is wider than the text column. `None` when RaTeX cannot draw it, or
+    /// it would be too small to read or taller than the screen.
+    fn fitted_image(&self, literal: &str, g: &Graphics, prefix: &Prefix) -> Option<Png> {
+        let indent = DISPLAY_MATH_INDENT.len() as u32;
+        let columns = u32::try_from(self.text_width(prefix))
+            .ok()?
+            .saturating_sub(indent);
+        let em = g.cell_height as f32;
+        let mut png = math_image::render(literal, g.foreground, em).ok()?;
+        let needed = png.width.div_ceil(g.cell_width);
+        if needed > columns {
+            let scale = columns as f32 / needed as f32;
+            if scale < MIN_MATH_SCALE {
+                return None;
+            }
+            png = math_image::render(literal, g.foreground, (em * scale).floor()).ok()?;
+        }
+        let rows = png.height.div_ceil(g.cell_height);
+        (rows < u32::from(g.screen_rows) && png.width.div_ceil(g.cell_width) <= columns)
+            .then_some(png)
+    }
+
+    /// Reserve the rows the image covers, each with the block's prefix,
+    /// then go back up and draw the image over them after the indent.
+    fn emit_image(&mut self, png: &Png, g: &Graphics, prefix: &mut Prefix) {
+        let rows = png.height.div_ceil(g.cell_height).max(1);
+        let column = prefix.width() + DISPLAY_MATH_INDENT.len();
+        for _ in 0..rows {
+            self.emit(prefix, &[]);
+        }
+        let up = rows - 1;
+        let mut place = String::new();
+        if up > 0 {
+            place.push_str(&format!("\x1b[{up}A"));
+        }
+        place.push_str(&format!("\r\x1b[{column}C"));
+        place.push_str(&kitty::place(&png.data));
+        if up > 0 {
+            place.push_str(&format!("\x1b[{up}B"));
+        }
+        if let Some(last) = self.lines.last_mut() {
+            last.push_str(&place);
         }
     }
 

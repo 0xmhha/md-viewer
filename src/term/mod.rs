@@ -3,7 +3,11 @@
 mod block;
 mod callout;
 mod inline;
+mod kitty;
+mod math_symbols;
+mod math_text;
 mod prefix;
+pub mod probe;
 mod span;
 mod style;
 mod table;
@@ -23,6 +27,9 @@ pub struct RenderOptions {
     pub width: usize,
     /// Emit ANSI escape sequences (SGR styles and OSC 8 links).
     pub color: bool,
+    /// Draw display math as images with the kitty graphics protocol.
+    /// `None` prints its source instead.
+    pub graphics: Option<probe::Graphics>,
 }
 
 /// Render a Markdown document for the terminal.
