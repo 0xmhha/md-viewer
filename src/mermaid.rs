@@ -405,12 +405,15 @@ mod tests {
     fn a_huge_diagram_is_refused_before_its_svg_is_parsed() {
         // Fuzzing regression: a 130,000px wide flowchart took 11s in the SVG
         // parser before its size was checked.
+        // The SVG below would fail to parse; refusing it as too large shows
+        // the size was checked first.
+        let unparsable = r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200000 40"><g"#;
+        let err = rasterize(unparsable, &at(1.0)).expect_err("too large");
+        assert!(err.contains("too large"), "{err}");
         let label = "word ".repeat(4000);
         let source = format!("flowchart LR\n  A[\"{label}\"] --> B\n");
-        let start = std::time::Instant::now();
         let err = image(&source, &at(1.0)).expect_err("too large");
         assert!(err.to_string().contains("too large"), "{err}");
-        assert!(start.elapsed().as_secs_f32() < 1.0, "{:?}", start.elapsed());
     }
 
     #[test]
