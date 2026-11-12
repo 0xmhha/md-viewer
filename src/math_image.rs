@@ -78,7 +78,7 @@ fn to_ratex(c: Rgb, alpha: f32) -> ratex_types::color::Color {
 }
 
 /// Width and height from the IHDR chunk, which a PNG must start with.
-fn png_size(data: &[u8]) -> Option<(u32, u32)> {
+pub(crate) fn png_size(data: &[u8]) -> Option<(u32, u32)> {
     const SIGNATURE: &[u8] = b"\x89PNG\r\n\x1a\n";
     if data.len() < 24 || !data.starts_with(SIGNATURE) || &data[12..16] != b"IHDR" {
         return None;

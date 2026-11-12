@@ -4,6 +4,7 @@ use std::collections::HashMap;
 
 use comrak::nodes::{AstNode, NodeCodeBlock, NodeList, NodeValue};
 
+use super::diagrams::{self, Diagrams, Drawn, is_mermaid};
 use super::inline::{self, InlineCtx};
 use super::kitty;
 use super::prefix::Prefix;
@@ -13,9 +14,10 @@ use super::style::{Color, Style};
 use super::wrap::wrap;
 use super::{RenderOptions, callout, table};
 use crate::math_image::{self, Png};
+use crate::mermaid;
 
 /// Narrowest text column kept even when prefixes eat the whole width.
-const MIN_TEXT_WIDTH: usize = 10;
+pub(super) const MIN_TEXT_WIDTH: usize = 10;
 const BULLETS: [&str; 3] = ["•", "◦", "▪"];
 const DISPLAY_MATH_INDENT: &str = "    ";
 /// Smallest scale a too-wide formula is shrunk to before its source is
@@ -29,6 +31,7 @@ const MAX_NESTING: usize = 32;
 pub struct Writer<'c> {
     opts: RenderOptions,
     footnotes: &'c HashMap<String, u32>,
+    diagrams: &'c Diagrams,
     lines: Vec<String>,
     list_depth: usize,
     nesting: usize,
@@ -44,10 +47,15 @@ pub fn gutter_style() -> Style {
 }
 
 impl<'c> Writer<'c> {
-    pub fn new(opts: &RenderOptions, footnotes: &'c HashMap<String, u32>) -> Self {
+    pub fn new(
+        opts: &RenderOptions,
+        footnotes: &'c HashMap<String, u32>,
+        diagrams: &'c Diagrams,
+    ) -> Self {
         Writer {
-            opts: *opts,
+            opts: opts.clone(),
             footnotes,
+            diagrams,
             lines: Vec::new(),
             list_depth: 0,
             nesting: 0,
@@ -165,6 +173,7 @@ impl<'c> Writer<'c> {
             }
             NodeValue::Callout(c) => callout::render(self, node, c, prefix),
             NodeValue::List(list) => self.list(node, list, prefix),
+            NodeValue::CodeBlock(code) if is_mermaid(&code.info) => self.mermaid(code, prefix),
             NodeValue::CodeBlock(code) => self.code_block(code, prefix),
             NodeValue::HtmlBlock(html) => self.html_block(&html.literal, prefix),
             NodeValue::ThematicBreak => {
@@ -220,7 +229,9 @@ impl<'c> Writer<'c> {
             && !literal.trim().is_empty()
             && let Some(png) = self.fitted_image(literal, &graphics, prefix)
         {
-            return self.emit_image(&png, &graphics, prefix);
+            let rows = png.height.div_ceil(graphics.cell_height).max(1);
+            let column = prefix.width() + DISPLAY_MATH_INDENT.len();
+            return self.emit_image(&png.data, rows, column, None, prefix);
         }
         for line in literal.lines().map(str::trim).filter(|l| !l.is_empty()) {
             let body = [
@@ -254,11 +265,46 @@ impl<'c> Writer<'c> {
             .then_some(png)
     }
 
-    /// Reserve the rows the image covers, each with the block's prefix,
-    /// then go back up and draw the image over them after the indent.
-    fn emit_image(&mut self, png: &Png, g: &Graphics, prefix: &mut Prefix) {
-        let rows = png.height.div_ceil(g.cell_height).max(1);
-        let column = prefix.width() + DISPLAY_MATH_INDENT.len();
+    /// A Mermaid diagram as an image, else as box-drawing text, else as its
+    /// source. Drawings were made ahead by `diagrams::draw`.
+    fn mermaid(&mut self, code: &NodeCodeBlock, prefix: &mut Prefix) {
+        let drawn = self.diagrams.get(&code.literal);
+        if let Some(g) = self.opts.graphics
+            && let Some(Drawn::Image(png)) = drawn
+            && let Ok(columns) = u32::try_from(self.text_width(prefix))
+            && let Some(at) = diagrams::placement(png, &g, columns)
+        {
+            let cells = at.scaled.then_some((at.columns, at.rows));
+            return self.emit_image(&png.data, at.rows, prefix.width(), cells, prefix);
+        }
+        let width = self.text_width(prefix);
+        let lines = match drawn {
+            Some(Drawn::Text { width: w, lines }) if *w == width => Some(lines.clone()),
+            // Drawn ahead at the full width, here narrower: draw again.
+            // The parse already finished in time, so this is quick.
+            Some(Drawn::Text { .. } | Drawn::Image(_)) => mermaid::text(&code.literal, width).ok(),
+            // Too slow, or not drawable even at the full width.
+            Some(Drawn::TimedOut) | None => None,
+        };
+        if let Some(lines) = lines {
+            for line in lines {
+                self.emit(prefix, &[Span::plain(line)]);
+            }
+            return;
+        }
+        self.code_block(code, prefix);
+    }
+
+    /// Reserve `rows` rows, each with the block's prefix, then go back up
+    /// and draw the image over them from `column`. `cells` scales it.
+    fn emit_image(
+        &mut self,
+        png: &[u8],
+        rows: u32,
+        column: usize,
+        cells: Option<(u32, u32)>,
+        prefix: &mut Prefix,
+    ) {
         for _ in 0..rows {
             self.emit(prefix, &[]);
         }
@@ -267,8 +313,12 @@ impl<'c> Writer<'c> {
         if up > 0 {
             place.push_str(&format!("\x1b[{up}A"));
         }
-        place.push_str(&format!("\r\x1b[{column}C"));
-        place.push_str(&kitty::place(&png.data));
+        place.push('\r');
+        // `CSI 0 C` moves one column, like `CSI 1 C`.
+        if column > 0 {
+            place.push_str(&format!("\x1b[{column}C"));
+        }
+        place.push_str(&kitty::place(png, cells));
         if up > 0 {
             place.push_str(&format!("\x1b[{up}B"));
         }
