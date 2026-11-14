@@ -409,23 +409,25 @@ fn block_with_id(markdown: &str, id: &str) -> Option<String> {
     let arena = Arena::new();
     let root = parse_document(&arena, markdown, &parse::options());
     let lines: Vec<&str> = markdown.split('\n').collect();
-    let text_of_lines = |node: &AstNode| {
-        let pos = node.data.borrow().sourcepos;
-        lines
-            .get(pos.start.line - 1..pos.end.line)
-            .map(|l| l.join("\n"))
-    };
     root.descendants().find_map(|node| {
         if !matches!(node.data.borrow().value, NodeValue::Paragraph) {
             return None;
         }
-        let text = text_of_lines(node)?;
+        let text = lines_of(&lines, node)?;
         if text.trim() == marker {
-            return node.previous_sibling().and_then(&text_of_lines);
+            return node.previous_sibling().and_then(|b| lines_of(&lines, b));
         }
         let kept = text.trim_end().strip_suffix(&marker)?;
         (kept.is_empty() || kept.ends_with(char::is_whitespace)).then(|| kept.trim_end().to_owned())
     })
+}
+
+/// The source lines a block spans.
+fn lines_of(lines: &[&str], node: &AstNode) -> Option<String> {
+    let pos = node.data.borrow().sourcepos;
+    lines
+        .get(pos.start.line - 1..pos.end.line)
+        .map(|l| l.join("\n"))
 }
 
 fn text_of<'a>(node: &'a AstNode<'a>) -> String {
