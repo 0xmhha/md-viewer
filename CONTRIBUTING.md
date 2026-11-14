@@ -13,8 +13,9 @@ propose changes.
 
 ## Development setup
 
-1. Install Rust with [rustup](https://rustup.rs). The toolchain version is
-   pinned in `rust-toolchain.toml` and is selected automatically.
+1. Install Rust with [rustup](https://rustup.rs). The project builds with
+   the stable toolchain, set in `rust-toolchain.toml` and selected
+   automatically.
 2. Build and run the tests:
 
    ```sh
