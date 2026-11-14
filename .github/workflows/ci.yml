@@ -21,8 +21,15 @@ jobs:
         os: [ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@v4
-      - name: Install the stable toolchain
-        run: rustup show active-toolchain || rustup toolchain install
+      - name: Install the latest stable toolchain
+        # rust-toolchain.toml names the stable channel, not a version, and
+        # runner images can carry an older stable than developers have.
+        # Update it so clippy and rustc match a fresh local install.
+        run: |
+          rustup update stable --no-self-update
+          rustup show active-toolchain
+          rustc --version
+          cargo clippy --version
       - uses: Swatinem/rust-cache@v2
       - name: Format
         run: cargo fmt --all -- --check
