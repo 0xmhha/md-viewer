@@ -11,17 +11,21 @@ pub struct Graphics {
     pub cell_height: u32,
     /// Text color, used as the ink of math images.
     pub foreground: Rgb,
+    /// Background color, if the terminal said. Diagrams put it under
+    /// their labels.
+    pub background: Option<Rgb>,
     /// Rows on the screen; a taller image could not be placed.
     pub screen_rows: u16,
 }
 
-/// Queries sent together: a kitty graphics support query, the text color
-/// (OSC 10), the cell size in pixels (CSI 16 t), and Primary Device
-/// Attributes last. Every terminal answers the last one, so its reply
+/// Queries sent together: a kitty graphics support query, the text and
+/// background colors (OSC 10, 11), the cell size in pixels (CSI 16 t),
+/// and Primary Device Attributes last. Every terminal answers the last one, so its reply
 /// marks the end of the answers without waiting for a timeout.
 const QUERIES: &str = concat!(
     "\x1b_Gi=31,s=1,v=1,a=q,t=d,f=24;AAAA\x1b\\",
     "\x1b]10;?\x1b\\",
+    "\x1b]11;?\x1b\\",
     "\x1b[16t",
     "\x1b[c",
 );
@@ -31,6 +35,7 @@ const QUERIES: &str = concat!(
 struct Replies {
     kitty: bool,
     foreground: Option<Rgb>,
+    background: Option<Rgb>,
     cell: Option<(u32, u32)>,
     /// The device attributes reply came: no more answers will follow.
     done: bool,
@@ -41,6 +46,7 @@ fn parse_replies(bytes: &[u8]) -> Replies {
     Replies {
         kitty: text.contains("\x1b_Gi=31;OK"),
         foreground: text.split("\x1b]10;rgb:").nth(1).and_then(parse_osc_color),
+        background: text.split("\x1b]11;rgb:").nth(1).and_then(parse_osc_color),
         cell: text.split("\x1b[6;").nth(1).and_then(parse_cell),
         done: device_attributes_seen(&text),
     }
@@ -158,6 +164,7 @@ mod platform {
             cell_width,
             cell_height,
             foreground: replies.foreground?,
+            background: replies.background,
             screen_rows: size.ws_row,
         })
     }
@@ -224,7 +231,7 @@ mod tests {
     use super::*;
 
     const GHOSTTY: &[u8] =
-        b"\x1b_Gi=31;OK\x1b\\\x1b]10;rgb:cdcd/d6d6/f4f4\x1b\\\x1b[6;21;8t\x1b[?62;22c";
+        b"\x1b_Gi=31;OK\x1b\\\x1b]10;rgb:cdcd/d6d6/f4f4\x1b\\\x1b]11;rgb:1e1e/1e1e/2e2e\x1b\\\x1b[6;21;8t\x1b[?62;22c";
 
     #[test]
     fn parses_a_full_set_of_replies() {
@@ -233,6 +240,7 @@ mod tests {
             Replies {
                 kitty: true,
                 foreground: Some(Rgb(0xcd, 0xd6, 0xf4)),
+                background: Some(Rgb(0x1e, 0x1e, 0x2e)),
                 cell: Some((8, 21)),
                 done: true,
             }

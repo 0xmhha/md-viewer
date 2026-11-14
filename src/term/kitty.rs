@@ -6,9 +6,14 @@ const CHUNK: usize = 4096;
 
 /// Escape sequences that draw `png` with its top-left corner at the
 /// cursor. The cursor does not move (`C=1`) and the terminal sends no
-/// reply (`q=2`), so nothing is left for the shell to read.
-pub fn place(png: &[u8]) -> String {
-    const HEAD: &str = "a=T,f=100,t=d,q=2,C=1";
+/// reply (`q=2`), so nothing is left for the shell to read. With `cells`,
+/// the terminal scales the image to that many columns and rows.
+pub fn place(png: &[u8], cells: Option<(u32, u32)>) -> String {
+    let head = match cells {
+        Some((columns, rows)) => format!("a=T,f=100,t=d,q=2,C=1,c={columns},r={rows}"),
+        None => "a=T,f=100,t=d,q=2,C=1".to_owned(),
+    };
+    let head = head.as_str();
     let payload = base64(png);
     // Base64 is ASCII, so splitting by bytes keeps characters whole.
     let chunks: Vec<&[u8]> = payload.as_bytes().chunks(CHUNK).collect();
@@ -17,15 +22,15 @@ pub fn place(png: &[u8]) -> String {
     for (i, chunk) in chunks.iter().enumerate() {
         let chunk = std::str::from_utf8(chunk).unwrap_or_default();
         let keys = match (i, chunks.len()) {
-            (_, 1) => HEAD.to_owned(),
-            (0, _) => format!("{HEAD},m=1"),
+            (_, 1) => head.to_owned(),
+            (0, _) => format!("{head},m=1"),
             (i, _) if i == last => "m=0".to_owned(),
             _ => "m=1".to_owned(),
         };
         out.push_str(&format!("\x1b_G{keys};{chunk}\x1b\\"));
     }
     if chunks.is_empty() {
-        out.push_str(&format!("\x1b_G{HEAD};\x1b\\"));
+        out.push_str(&format!("\x1b_G{head};\x1b\\"));
     }
     out
 }
@@ -74,14 +79,20 @@ mod tests {
 
     #[test]
     fn small_image_is_one_sequence() {
-        let out = place(b"foo");
+        let out = place(b"foo", None);
         assert_eq!(out, "\x1b_Ga=T,f=100,t=d,q=2,C=1;Zm9v\x1b\\");
+    }
+
+    #[test]
+    fn a_cell_size_scales_the_image() {
+        let out = place(b"foo", Some((40, 12)));
+        assert_eq!(out, "\x1b_Ga=T,f=100,t=d,q=2,C=1,c=40,r=12;Zm9v\x1b\\");
     }
 
     #[test]
     fn large_image_is_split_into_chunks() {
         let data = vec![7u8; 7000]; // 9336 base64 bytes: three chunks
-        let out = place(&data);
+        let out = place(&data, None);
         let parts: Vec<&str> = out.split("\x1b\\").filter(|p| !p.is_empty()).collect();
         assert_eq!(parts.len(), 3, "{parts:?}");
         assert!(parts[0].starts_with("\x1b_Ga=T,f=100,t=d,q=2,C=1,m=1;"));

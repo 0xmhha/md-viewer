@@ -22,7 +22,7 @@ right where you work, including over SSH.
   fallback when the terminal has no graphics support **(done in the
   terminal)**.
 - Mermaid diagrams rendered as images, with Unicode box drawings as a
-  fallback.
+  fallback **(done in the terminal)**.
 - GitHub Flavored Markdown and relative images.
 - Obsidian syntax: wikilinks, embeds, callouts, highlights, front matter
   **(done in the terminal; embeds show as placeholders for now)**.
@@ -56,7 +56,25 @@ Math in the terminal:
 - A terminal that answers the start-up question later than 200 ms (1 s over
   SSH) gets LaTeX source, and its late answer may show up at the shell prompt.
 
-Until image rendering lands, Mermaid diagrams are shown as their source code.
+Mermaid in the terminal:
+
+- Flowchart, sequence, class, state, ER, block, packet and XY chart diagrams
+  are drawn. Other types are shown as their source.
+- Diagrams are drawn as images in the terminal's text and background colors,
+  under the same conditions as display math. A diagram wider than the text
+  column or taller than the screen is scaled down to fit, to half its size at
+  most.
+- Drawn images are cached in `$XDG_CACHE_HOME/mdv` (or `~/.cache/mdv`), so the
+  second time a document is opened its diagrams appear without being drawn
+  again. Deleting the directory is safe; nothing else is kept there, and it is
+  not cleaned up automatically.
+- Otherwise a diagram is drawn with Unicode box-drawing characters when it fits
+  the width, and shown as its source when it does not or cannot be drawn.
+  Diagrams are drawn side by side on all CPU cores; one that takes more than
+  2 seconds is shown as its source.
+- Labels use system fonts (Helvetica and Apple SD Gothic Neo on macOS,
+  DejaVu Sans and Noto Sans CJK on Linux); without them every installed font
+  is searched, which is slower.
 
 ## Building from source
 

@@ -3,6 +3,7 @@ use std::path::Path;
 use std::process::ExitCode;
 
 use clap::Parser;
+use md_viewer::cache::Cache;
 use md_viewer::cli::{Cli, Command, color_enabled, no_color_requested, output_width};
 use md_viewer::term::{RenderOptions, probe, render};
 
@@ -39,14 +40,18 @@ fn view(file: &Path, cli: &Cli) -> ExitCode {
         no_color_requested(std::env::var_os("NO_COLOR").as_deref()),
     );
     // Images go only to a terminal that is showing colors; a pipe or a
-    // file gets the math source.
-    let has_display_math = markdown.contains("$$");
+    // file gets the math source and Mermaid box drawings. Documents with
+    // nothing to draw skip asking the terminal.
+    let has_images = markdown.contains("$$")
+        || markdown.contains("```mermaid")
+        || markdown.contains("~~~mermaid");
     let opts = RenderOptions {
         width: output_width(cli.width, terminal),
         color,
-        graphics: (is_tty && color && has_display_math)
+        graphics: (is_tty && color && has_images)
             .then(probe::detect)
             .flatten(),
+        cache: Cache::user(),
     };
     let text = render(&markdown, &opts);
     match stdout.lock().write_all(text.as_bytes()) {
