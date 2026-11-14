@@ -2,7 +2,9 @@
 
 pub mod cache;
 pub mod cli;
+pub mod embed;
 pub mod math_image;
 pub mod mermaid;
 pub mod parse;
 pub mod term;
+pub mod vault;

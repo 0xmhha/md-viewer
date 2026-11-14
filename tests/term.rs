@@ -14,6 +14,7 @@ fn plain_at(md: &str, width: usize) -> String {
             color: false,
             graphics: None,
             cache: None,
+            base_dir: None,
         },
     )
 }
@@ -30,6 +31,7 @@ fn colored(md: &str) -> String {
             color: true,
             graphics: None,
             cache: None,
+            base_dir: None,
         },
     )
 }
@@ -384,6 +386,7 @@ fn with_graphics(md: &str, graphics: Graphics, width: usize) -> String {
             color: true,
             graphics: Some(graphics),
             cache: None,
+            base_dir: None,
         },
     )
 }
@@ -565,4 +568,59 @@ fn diagrams_are_drawn_as_text_side_by_side() {
     assert!(out.contains("participant A") && out.contains("participant B"));
     assert!(out.contains("Start") && out.contains('┌'), "{out}");
     assert!(spent < std::time::Duration::from_millis(2500), "{spent:?}");
+}
+
+// Vault embeds and images (M4)
+
+fn fixture_image() -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/vault/attachments/diagram.png")
+}
+
+#[test]
+fn an_embed_box_is_titled_with_an_arrow() {
+    let out = plain("> [!mdv-embed] Recipe\n> Mix **flour**.\n");
+    assert_eq!(lines(&out)[0], "│ ↳ Recipe");
+    assert!(!out.contains("[!mdv-embed]"), "{out}");
+}
+
+#[test]
+fn a_png_on_its_own_line_is_drawn_with_graphics() {
+    let md = format!("![diagram](<{}>)\n", fixture_image().display());
+    let out = with_graphics(&md, GHOSTTY, 80);
+    assert!(out.contains(KITTY), "{out:?}");
+    assert!(!out.contains("[image:"), "{out:?}");
+}
+
+#[test]
+fn a_relative_png_is_found_beside_the_document() {
+    let md = "![diagram](attachments/diagram.png)\n";
+    let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/vault");
+    let out = render(
+        md,
+        &RenderOptions {
+            width: 80,
+            color: true,
+            graphics: Some(GHOSTTY),
+            cache: None,
+            base_dir: Some(base),
+        },
+    );
+    assert!(out.contains(KITTY), "{out:?}");
+}
+
+#[test]
+fn images_that_cannot_be_drawn_keep_their_placeholder() {
+    let md = format!("![diagram](<{}>)\n", fixture_image().display());
+    assert_eq!(plain(&md).trim(), "[image: diagram]");
+    let missing = with_graphics("![gone](missing.png)\n", GHOSTTY, 80);
+    assert!(
+        missing.contains("[image: gone]") && !missing.contains(KITTY),
+        "{missing:?}"
+    );
+    let remote = with_graphics("![web](https://example.com/a.png)\n", GHOSTTY, 80);
+    assert!(
+        remote.contains("[image: web]") && !remote.contains(KITTY),
+        "{remote:?}"
+    );
 }

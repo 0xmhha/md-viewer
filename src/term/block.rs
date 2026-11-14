@@ -26,6 +26,45 @@ const MIN_MATH_SCALE: f32 = 0.6;
 /// Quotes, lists and callouts nested deeper than this print as plain text,
 /// so hostile input cannot exhaust the stack or grow prefixes without bound.
 const MAX_NESTING: usize = 32;
+/// Larger image files are shown as their placeholder, not sent to the
+/// terminal.
+const MAX_IMAGE_BYTES: u64 = 20 * 1024 * 1024;
+
+/// The URL of the only thing in a paragraph, when that is an image.
+fn lone_image<'a>(paragraph: &'a AstNode<'a>) -> Option<String> {
+    let mut found = None;
+    for child in paragraph.children() {
+        match &child.data.borrow().value {
+            NodeValue::Image(link) if found.is_none() => found = Some(link.url.clone()),
+            NodeValue::Text(t) if t.trim().is_empty() => {}
+            NodeValue::SoftBreak | NodeValue::LineBreak => {}
+            _ => return None,
+        }
+    }
+    found
+}
+
+/// The file a PNG image URL names on this machine: an absolute path, or
+/// one relative to `base`. Web addresses and other formats are `None`.
+fn local_png(url: &str, base: Option<&std::path::Path>) -> Option<std::path::PathBuf> {
+    let url = ["file://localhost", "file://"]
+        .iter()
+        .find_map(|p| url.strip_prefix(p))
+        .unwrap_or(url);
+    if url.contains("://") {
+        return None;
+    }
+    let url = crate::parse::percent_decode(url);
+    if !url.to_ascii_lowercase().ends_with(".png") {
+        return None;
+    }
+    let path = std::path::Path::new(&url);
+    if path.is_absolute() {
+        Some(path.to_path_buf())
+    } else {
+        base.map(|b| b.join(path))
+    }
+}
 
 /// Collects the printed lines of a document.
 pub struct Writer<'c> {
@@ -199,6 +238,11 @@ impl<'c> Writer<'c> {
     }
 
     fn paragraph<'a>(&mut self, node: &'a AstNode<'a>, prefix: &mut Prefix) {
+        if let Some(url) = lone_image(node)
+            && self.local_image(&url, prefix)
+        {
+            return;
+        }
         let ctx = self.inline_ctx();
         let mut segments = vec![Segment::Text(Vec::new())];
         for child in node.children() {
@@ -222,6 +266,39 @@ impl<'c> Writer<'c> {
                 Segment::DisplayMath(literal) => self.display_math(&literal, prefix),
             }
         }
+    }
+
+    /// Draw the PNG file at `url`, shrunk to fit the text column and the
+    /// screen. `false` when there is no terminal graphics, the file is not
+    /// a local PNG, or it cannot be read.
+    fn local_image(&mut self, url: &str, prefix: &mut Prefix) -> bool {
+        let Some(g) = self.opts.graphics else {
+            return false;
+        };
+        let Some(path) = local_png(url, self.opts.base_dir.as_deref()) else {
+            return false;
+        };
+        let readable = std::fs::metadata(&path).is_ok_and(|m| m.len() <= MAX_IMAGE_BYTES);
+        let Some(data) = readable.then(|| std::fs::read(&path).ok()).flatten() else {
+            return false;
+        };
+        let Some((width, height)) = math_image::png_size(&data) else {
+            return false;
+        };
+        let png = Png {
+            data,
+            width,
+            height,
+        };
+        let Ok(columns) = u32::try_from(self.text_width(prefix)) else {
+            return false;
+        };
+        let Some(at) = diagrams::fit(&png, &g, columns, 0.0) else {
+            return false;
+        };
+        let cells = at.scaled.then_some((at.columns, at.rows));
+        self.emit_image(&png.data, at.rows, prefix.width(), cells, prefix);
+        true
     }
 
     fn display_math(&mut self, literal: &str, prefix: &mut Prefix) {
@@ -432,5 +509,35 @@ impl<'c> Writer<'c> {
         for line in literal.lines() {
             self.emit(prefix, &[Span::new(line, Style::default().dim())]);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::{Path, PathBuf};
+
+    #[test]
+    fn local_png_paths_are_decoded_and_resolved() {
+        let base = Some(Path::new("/docs"));
+        assert_eq!(
+            local_png("my%20pic.png", base),
+            Some(PathBuf::from("/docs/my pic.png"))
+        );
+        assert_eq!(
+            local_png("/abs/a.png", None),
+            Some(PathBuf::from("/abs/a.png"))
+        );
+        assert_eq!(
+            local_png("file:///abs/a.png", None),
+            Some(PathBuf::from("/abs/a.png"))
+        );
+        assert_eq!(
+            local_png("file://localhost/abs/a.png", None),
+            Some(PathBuf::from("/abs/a.png"))
+        );
+        assert_eq!(local_png("https://x.org/a.png", base), None);
+        assert_eq!(local_png("a.jpg", base), None);
+        assert_eq!(local_png("rel.png", None), None);
     }
 }

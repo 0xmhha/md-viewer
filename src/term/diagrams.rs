@@ -47,13 +47,19 @@ pub struct Placement {
 /// Fit `png` into `columns` and the screen height, shrinking it if needed.
 /// `None` when it would have to shrink below `MIN_SCALE`.
 pub fn placement(png: &Png, g: &Graphics, columns: u32) -> Option<Placement> {
+    fit(png, g, columns, MIN_SCALE)
+}
+
+/// Fit `png` into `columns` and the screen height, shrinking it as far as
+/// `min_scale`. `None` when it would have to shrink further.
+pub fn fit(png: &Png, g: &Graphics, columns: u32, min_scale: f32) -> Option<Placement> {
     let max_rows = u32::from(g.screen_rows).saturating_sub(1).max(1);
     let natural_columns = png.width as f32 / g.cell_width as f32;
     let natural_rows = png.height as f32 / g.cell_height as f32;
     let scale = (columns as f32 / natural_columns)
         .min(max_rows as f32 / natural_rows)
         .min(1.0);
-    if scale < MIN_SCALE {
+    if scale < min_scale || !scale.is_finite() || scale <= 0.0 {
         return None;
     }
     let fit = |cells: f32, limit: u32| ((cells * scale).ceil() as u32).clamp(1, limit);

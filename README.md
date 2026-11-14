@@ -23,10 +23,11 @@ right where you work, including over SSH.
   terminal)**.
 - Mermaid diagrams rendered as images, with Unicode box drawings as a
   fallback **(done in the terminal)**.
-- GitHub Flavored Markdown and relative images.
+- GitHub Flavored Markdown and relative images **(PNG done in the
+  terminal)**.
 - Obsidian syntax: wikilinks, embeds, callouts, highlights, front matter
-  **(done in the terminal; embeds show as placeholders for now)**.
-- Open a note by name inside an Obsidian vault.
+  **(done in the terminal)**.
+- Open a note by name inside an Obsidian vault **(done)**.
 - `mdv check`: report Mermaid syntax errors, math parse errors, broken image
   paths and missing wikilinks as JSON, so scripts and agents can verify
   documents.
@@ -39,7 +40,26 @@ mdv note.md                 # render in the terminal
 mdv --width 100 note.md     # wrap at 100 columns instead of the terminal width
 mdv --color never note.md   # plain text; `auto` (default) also honours NO_COLOR
 mdv note.md | less -R       # page long documents
+mdv "Some note"             # inside a vault: open the note with this name
 ```
+
+Obsidian vaults:
+
+- A vault is the nearest folder at or above the current one that holds
+  `.obsidian/`. When the argument is not a file, `mdv` looks for a note of
+  that name anywhere in the vault, ignoring case, as `[[links]]` do. If two
+  notes share the name, it lists both and exits with an error; give part of
+  the folder (`mdv "b/Same"`) to pick one.
+- An embed on a line of its own (`![[note]]`, `![[note#Heading]]`,
+  `![[note#^block]]`) is shown in place, in a box titled with its target.
+  Embeds inside embeds are followed too; a note that embeds itself, directly
+  or through others, is shown once. A missing or ambiguous target says so in
+  its box.
+- `![[image.png]]` and `![alt](relative/path.png)` are drawn when the terminal
+  shows images; otherwise, and for other image formats, a placeholder names
+  the image.
+- Embeds inside a sentence stay links. Embeds of other files, such as
+  Obsidian Bases (`.base`) and PDFs, also stay links.
 
 Math in the terminal:
 
