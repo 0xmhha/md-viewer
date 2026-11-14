@@ -1,8 +1,62 @@
 # Handoff
 
-This note is the state of `mdv` after milestone M4 (2026-11-14), so the next
-session can start M5 without reading the earlier history. Update it when a
-milestone lands.
+This note is the state of `mdv` after milestone M4 (2026-11-14). It is the
+only record of the project's decisions: the planning notes and session logs
+they came from are not kept. Update it when a milestone lands or a decision
+changes.
+
+## 0. Goal and scope
+
+**Goal:** a single Rust binary, `mdv`, that opens Obsidian vault notes and
+plain Markdown from the command line with no other tool.
+
+- **Default view:** the terminal. `--browser` opens a local browser view.
+- **What it must show unbroken:** math, Mermaid, images and Obsidian syntax
+  (wikilinks, callouts, embeds).
+- **`mdv check`:** lets an agent find a document's errors itself.
+
+### Requirements
+
+| Id | Requirement | v1? |
+|---|---|---|
+| P1 | Mermaid in the terminal: an image, else box drawings | yes (done) |
+| P2 | The terminal view works over SSH, and code blocks can be copied with OSC 52 | yes (copy **not done**, see section 2) |
+| P3 | KaTeX/Mermaid assets inside the binary; no network at run time; no node, bun or Chromium | yes |
+| P5 | `mdv check` reports Mermaid syntax, math parse errors, broken images and missing wikilinks as JSON | yes (M5) |
+| P4 | Original and translation side by side | v2 |
+| P6 | A viewer for Claude and Codex session JSONL | separate tool, not mdv |
+
+**v1 boundary:**
+- **In v1:** the criteria in section 2, plus opening notes by name, terminal
+  embeds, and link following and backlinks in the browser.
+- **v2:** P4, `mdv check --pair`, and an interactive terminal view (moving
+  between links without leaving `mdv`).
+
+### Constraints
+
+- No network access at run time.
+- Do not copy GPL code. mdfried and utftex were read for structure only.
+- merman is used without its EPL-2.0 ELK layout feature. Keep it off.
+- Do not invent a new Markdown syntax. Anything added must render cleanly in
+  Obsidian and on GitHub.
+- Commits and PRs only when the owner asks.
+
+### Decisions and why
+
+| # | Decision | Why | Rejected |
+|---|---|---|---|
+| D1 | A fast single-binary CLI | The owner opened other tools to read each document, and they failed or drew things wrong | Editor extension, other apps |
+| D2 | Terminal by default, browser with a flag | The owner's choice | A native window (system webview) |
+| D4 | Rust | The spike measured 8.2 MB, 0 errors on 173 formulas and 165 diagrams, and 40–70 ms per math document. Only Rust had libraries that draw both without a browser | Go (glamour is mature but has no math images and only two Mermaid types) |
+| D6 | Terminal Mermaid: an image drawn ahead and cached by content hash when the terminal shows images, else Unicode box drawing. Math: an image, else LaTeX source in color | Keeps both P1 and P2 (SSH) | Images only, box drawing only |
+| D7 | Linking in v1: open by name, terminal embeds, browser links and backlinks. Interactive terminal view in v2 | Linking is the core of Obsidian. Adding it in steps keeps the 100 ms start | Browser only; both modes interactive from the start |
+| D7-2 | P4 (v2): headings aligned left and right in the browser, per-section mismatch of math, code, numbers and links, and `mdv check --pair`. Paragraph level later | Catches the worst translation errors without changing the converter | Drop P4; paragraph level from the start |
+| D9 | Pairing syntax (v2): the translation's front matter has `translation_of: "[[id]]"`. Matching paragraphs end with the same Obsidian block id (`^p12`). Without ids, pair by heading order | File names cannot tell which note translates which. Both are existing Obsidian syntax, so nothing breaks elsewhere | A new `<<pair:...>>` syntax (shows raw in Obsidian and GitHub) |
+| D10 | v1 = the criteria in section 2 + D7. v2 = P4, `check --pair`, the interactive terminal | v1 does not wait for the converter work P4 needs | All in v1; the base criteria only |
+| D11 | merman draws both the images (SVG rasterized by resvg) and the box drawings; its crates are built for size | On 168 real diagrams both libraries drew images with 0 errors, but mermaid-rs-renderer overlapped or lost flowchart labels. merman SVG averages 6 ms (34 ms for the other). Binary 19.05 MB | mermaid-rs-renderer for images plus merman for boxes (13.2 MB, label problems) |
+
+D9 and D7-2 are written in, and read by, other tools: the vault's policy and
+the Markdown converter. `mdv` only reads them.
 
 ## 1. Where things stand
 
@@ -38,7 +92,30 @@ image paths and missing wikilinks. The pieces exist already:
 - `embed` already writes "Not found in the vault." into its boxes.
 
 The CLI already parses `mdv check <files...>` into `Command::Check`. Only
-the reporting is missing.
+the reporting is missing. The JSON shape has not been designed yet; settle it
+first, since agents will parse it.
+
+### Requirement with no milestone yet
+
+**OSC 52 copy (P2):** a way to copy a code block to the clipboard with the
+OSC 52 escape. This works over SSH too. It is a v1 requirement but no
+milestone has it and nothing is built. Put it before M7, so the release check
+covers it.
+
+### End-to-end items on the test vault
+
+`tests/fixtures/vault/` is synthetic. Items 1 and 2 are done in
+`tests/vault.rs`.
+
+1. `mdv <name>` finds a note in a subfolder. With two notes of that name, it
+   lists both and fails.
+2. `![[note]]`, `![[note#Heading]]` and `![[image.png]]` expand. Notes that
+   embed each other expand once and stop.
+3. (M6) In the browser, clicking `[[note]]`, `[[note|alias]]`,
+   `[[note#Heading]]` and `[[note#^block]]` goes to that place.
+4. (M6) The backlink list equals the set of notes that link to the note.
+5. (M5, M6) A link to a missing note is marked on screen and reported by
+   `mdv check`.
 
 ### v1 completion criteria
 
@@ -53,8 +130,19 @@ the reporting is missing.
    embeds, following links, backlinks.
 7. The user approves terminal captures of five representative documents.
 
-The baseline documents are private notes. Their list lives outside this
-repository and is passed to the corpus tests as a file (section 5).
+The baseline documents are private notes. Section 5 says how to collect
+them; `scripts/check_residue.py` takes them as arguments.
+
+The five documents for the captures (criterion 7) are private too. Each was
+chosen to cover one thing:
+1. many display and inline formulas
+2. nine flowcharts with Korean labels
+3. seven sequence diagrams, the most in the vault
+4. embeds and wikilinks together
+5. callouts: with one other note, it covers all five callout types
+
+Their names are recorded in the owner's vault, in the session record for
+this handoff.
 
 ### Not finished from earlier milestones
 
@@ -147,15 +235,49 @@ cargo build --release && stat -f %z target/release/mdv   # size (macOS)
   MDV_CORPUS=list.txt cargo test --release --lib mermaid -- --ignored --nocapture
   MDV_CORPUS=list.txt cargo test --release --lib math_image -- --ignored --nocapture
   ```
-- **Raw syntax check (criterion 2):** this was run with a script that is
-  not in the repository yet.
-  - It renders each document with `--color always --width 120`.
-  - It drops code block frames (`╭─` … `╰─`) and inline code (SGR 32).
-  - It then counts `$$`, `` ```mermaid ``, `[[`, `> [!` and closed
-    `==text==` pairs. A lone `==` is a comparison, and Obsidian shows it as
-    is.
-  - Move it into `scripts/` with the M7 measurement scripts. The last run
-    found 0 on the 118 baseline documents.
+- **Raw syntax check (criterion 2):** `scripts/check_residue.py`. It exits
+  with 1 when any document has residue.
+  ```sh
+  scripts/check_residue.py --mdv target/release/mdv --vault <vault> --docs <folder>
+  ```
+  - `--vault` collects the vault notes that hold Mermaid or a callout.
+  - `--docs` adds every `.md` file in a folder.
+  - Code block frames and inline code are skipped. Closed `==text==` counts;
+    a lone `==` is a comparison in prose and does not.
+  - The last run found 0 on the 132 baseline documents.
+- **Baseline documents (criterion 1):** they are private, so only how to
+  collect them is written here:
+  - the chapters of the LLM book used for math (12 files)
+  - every vault note with a Mermaid block (40)
+  - every vault note with a callout (83)
+
+  That made 118 unique files at first and 132 by the end of 2026-11-14, as
+  the vault grows. Collect them again for each check (`--vault` and
+  `--docs` do this), and record the vault's git commit with the result.
+- **Fuzzing (done in M3, not kept in the repository):**
+  - **Seeds:** the 168 real diagrams and merman's 114 examples.
+  - **Mutations:** truncated lines, deep nesting, very long lines, odd
+    tokens and directives.
+  - **Run:** fed to `mermaid::image` and `mermaid::text` in a
+    `panic = "unwind"` build, with and without overflow checks.
+  - **Result:** 323k inputs, 0 panics.
+  - **Bugs found:** a 130,000 px SVG took 11 s to parse, and the sequence
+    parser is quadratic on long lines. Both have regression tests in
+    `src/mermaid.rs`.
+
+### Measurements to compare against
+
+Release build, macOS, Ghostty, measured 2026-11-11 to 2026-11-14.
+
+| What | Result |
+|---|---|
+| Real diagrams drawn as images | 168 of 168, 0 errors |
+| Real diagrams that fit 120 columns as box drawings | 115 of 168 |
+| First run of a Mermaid document | 85–140 ms |
+| Second run (disk cache) | 17–21 ms |
+| 18 diagrams as box drawings, no graphics | 20 ms |
+| A vault note with embeds, by path or by name | ≤10 ms |
+| Binary | 19.40 MB |
 
 ### Things that cost time before
 
