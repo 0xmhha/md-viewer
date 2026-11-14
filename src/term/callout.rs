@@ -21,6 +21,7 @@ fn kind(callout_type: &str) -> (Color, &'static str) {
         "failure" | "fail" | "missing" | "danger" | "error" | "bug" => (Color::Red, "✕"),
         "example" => (Color::Magenta, "»"),
         "quote" | "cite" => (Color::BrightBlack, "❝"),
+        crate::embed::CALLOUT => (Color::Cyan, "↳"),
         _ => (Color::Blue, "ℹ"),
     }
 }

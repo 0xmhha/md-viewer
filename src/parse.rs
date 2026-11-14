@@ -27,6 +27,31 @@ pub fn options() -> Options<'static> {
     o
 }
 
+/// `%XX` escapes in a link destination decoded to bytes, as a browser
+/// does for a local path. Invalid escapes and non-UTF-8 results stay as
+/// written.
+pub fn percent_decode(s: &str) -> String {
+    let bytes = s.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        let hex = |b: u8| (b as char).to_digit(16);
+        if bytes[i] == b'%'
+            && let (Some(Some(hi)), Some(Some(lo))) = (
+                bytes.get(i + 1).map(|&b| hex(b)),
+                bytes.get(i + 2).map(|&b| hex(b)),
+            )
+        {
+            out.push((hi * 16 + lo) as u8);
+            i += 3;
+            continue;
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8(out).unwrap_or_else(|_| s.to_owned())
+}
+
 /// Collect math and Mermaid blocks in document order.
 pub fn special_blocks(markdown: &str) -> Vec<SpecialBlock> {
     let arena = Arena::new();
@@ -83,6 +108,14 @@ mod tests {
     fn ignores_other_code_blocks_and_dollars_in_code() {
         let md = "```rust\nlet x = \"$a$\";\n```\n\n`$b$`\n";
         assert!(special_blocks(md).is_empty());
+    }
+
+    #[test]
+    fn percent_escapes_are_decoded() {
+        assert_eq!(percent_decode("my%20pic.png"), "my pic.png");
+        assert_eq!(percent_decode("%ED%95%9C.png"), "한.png");
+        assert_eq!(percent_decode("100%.png"), "100%.png");
+        assert_eq!(percent_decode("%zz.png"), "%zz.png");
     }
 
     #[test]

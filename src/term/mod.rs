@@ -15,6 +15,7 @@ mod table;
 mod wrap;
 
 use std::collections::HashMap;
+use std::path::PathBuf;
 
 use comrak::nodes::{AstNode, NodeValue};
 use comrak::{Arena, parse_document};
@@ -34,6 +35,8 @@ pub struct RenderOptions {
     pub graphics: Option<probe::Graphics>,
     /// Where drawn diagrams are kept between runs. `None` draws every time.
     pub cache: Option<Cache>,
+    /// Folder that relative image paths start from: the document's.
+    pub base_dir: Option<PathBuf>,
 }
 
 /// Render a Markdown document for the terminal.

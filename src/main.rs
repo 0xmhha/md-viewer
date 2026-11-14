@@ -5,7 +5,9 @@ use std::process::ExitCode;
 use clap::Parser;
 use md_viewer::cache::Cache;
 use md_viewer::cli::{Cli, Command, color_enabled, no_color_requested, output_width};
+use md_viewer::embed;
 use md_viewer::term::{RenderOptions, probe, render};
+use md_viewer::vault::{self, Vault};
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
@@ -20,9 +22,18 @@ fn main() -> ExitCode {
     }
 }
 
-fn view(file: &Path, cli: &Cli) -> ExitCode {
+fn view(arg: &Path, cli: &Cli) -> ExitCode {
+    let cwd = std::env::current_dir().unwrap_or_default();
+    let file = match vault::locate(arg, &cwd) {
+        Ok(file) => file,
+        Err(e) => {
+            eprintln!("error: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let file = file.as_path();
     let markdown = match std::fs::read_to_string(file) {
-        Ok(text) => text,
+        Ok(text) => expand_embeds(text, file),
         Err(e) => {
             eprintln!("error: cannot read {}: {e}", file.display());
             return ExitCode::FAILURE;
@@ -44,7 +55,8 @@ fn view(file: &Path, cli: &Cli) -> ExitCode {
     // nothing to draw skip asking the terminal.
     let has_images = markdown.contains("$$")
         || markdown.contains("```mermaid")
-        || markdown.contains("~~~mermaid");
+        || markdown.contains("~~~mermaid")
+        || (markdown.contains("![") && markdown.to_ascii_lowercase().contains(".png"));
     let opts = RenderOptions {
         width: output_width(cli.width, terminal),
         color,
@@ -52,6 +64,7 @@ fn view(file: &Path, cli: &Cli) -> ExitCode {
             .then(probe::detect)
             .flatten(),
         cache: Cache::user(),
+        base_dir: file.parent().map(Path::to_path_buf),
     };
     let text = render(&markdown, &opts);
     match stdout.lock().write_all(text.as_bytes()) {
@@ -63,6 +76,20 @@ fn view(file: &Path, cli: &Cli) -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+/// `markdown` with its embeds expanded from the vault around `file`, or
+/// from `file`'s folder when it is in no vault.
+fn expand_embeds(markdown: String, file: &Path) -> String {
+    if !markdown.contains("![[") {
+        return markdown;
+    }
+    let dir = file.parent().unwrap_or(Path::new("."));
+    let vault = match Vault::find_root(dir) {
+        Some(root) => Vault::open(&root),
+        None => Vault::open_flat(dir),
+    };
+    embed::expand(&markdown, file, &vault)
 }
 
 fn not_yet(feature: &str) -> ExitCode {
