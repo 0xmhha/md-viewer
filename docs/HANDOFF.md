@@ -55,6 +55,13 @@ plain Markdown from the command line with no other tool.
 | D10 | v1 = the criteria in section 2 + D7. v2 = P4, `check --pair`, the interactive terminal | v1 does not wait for the converter work P4 needs | All in v1; the base criteria only |
 | D11 | merman draws both the images (SVG rasterized by resvg) and the box drawings; its crates are built for size | On 168 real diagrams both libraries drew images with 0 errors, but mermaid-rs-renderer overlapped or lost flowchart labels. merman SVG averages 6 ms (34 ms for the other). Binary 19.05 MB | mermaid-rs-renderer for images plus merman for boxes (13.2 MB, label problems) |
 
+| — | Browser view: server-side SVG from RaTeX and merman, no JavaScript (section 2) | Same output as the terminal, small binary, no JS runtime | Bundled KaTeX and mermaid.js; SVG by default with JS as an option |
+| — | License: MIT or Apache-2.0, at the user's choice; the embedded KaTeX fonts keep their OFL notice in `THIRD_PARTY_NOTICES.md` | Usual for Rust crates | Apache-2.0 only, MIT only |
+| — | The spike code went to the `spike/rust-render` branch; `main` started fresh | The spike was a measurement, not a base to build on | Building M0 on the spike, deleting it |
+
+The toolchain was first pinned to 1.99.1, then changed to follow stable
+(#6, #8).
+
 D9 and D7-2 are written in, and read by, other tools: the vault's policy and
 the Markdown converter. `mdv` only reads them.
 
@@ -161,17 +168,18 @@ this handoff.
   invalid line. `mdv` caps it with a 2 s budget per diagram. The bug has not
   been reported upstream.
 
-### Decision still open before M6
+### How M6 draws math and Mermaid (decided)
 
-How the browser view draws math and Mermaid:
+The browser view serves SVG made on the server by the same code the
+terminal uses (RaTeX for math, merman for Mermaid), with no JavaScript. This
+was decided on 2026-11-09, when mermaid-rs-renderer was still the planned
+Mermaid library; D11 later replaced it with merman.
 
-- **Server-side SVG:** serve SVG made by the same RaTeX and merman code the
-  terminal uses. The output matches the terminal and the binary stays small.
-- **Bundled KaTeX and mermaid.js:** the best drawing quality, but an
-  estimated 4 MB more (not measured).
-
-The binary is 19.40 MB against the 20 MB limit, so the second option needs
-measuring first.
+- **Why:** the output matches the terminal, the binary stays small, and P3
+  holds (no node or bundled JS runtime).
+- **Rejected:** bundling KaTeX and mermaid.js (best quality, an estimated
+  4 MB more against the 20 MB limit), and SVG by default with the JS
+  libraries as an option.
 
 ## 3. Code map
 
