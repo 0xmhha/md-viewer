@@ -78,7 +78,7 @@ Mermaid in the terminal:
 
 ## Building from source
 
-Requires the Rust toolchain pinned in `rust-toolchain.toml` (installed
+Requires stable Rust, as set in `rust-toolchain.toml` (installed
 automatically by `rustup`).
 
 ```sh
